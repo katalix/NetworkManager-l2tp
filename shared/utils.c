@@ -66,9 +66,7 @@ nm_find_l2tpd (void)
 {
 	static const char *l2tp_binary_paths[] =
 		{
-			"/sbin/xl2tpd",
-			"/usr/sbin/xl2tpd",
-			"/usr/local/sbin/xl2tpd",
+			"/usr/local/sbin/kl2tpd",
 			NULL
 		};
 
