@@ -1,6 +1,21 @@
 # NetworkMananger-l2tp
 
 ----
+This forked version of NetworkManager-l2tp modifies the upstream sources to
+support using Katalix's kl2tpd application in place of xl2tpd.
+
+The benefits of kl2tpd are:
+* It uses ephemeral ports by default.
+* It supports the use of IPSec with kernel-mode L2TP data transport.
+
+Before using this forked version of NetworkManager-l2tp you must first build and
+install kl2tpd to /usr/local/sbin/kl2tpd.  Refer to the go-l2tp project
+( https://github.com/katalix/go-l2tp ) for further details on building kl2tpd.
+
+The original README.md for NetworkManager-l2tp follows.
+----
+
+----
 If you wish to distribute NetworkManager-l2tp 1.8.2 binaries for a Linux
 distribution, please note that there is a GPL/OpenSSL license conflict
 with OpenSSL < 3.0.0 on Linux distibutions that do not consider OpenSSL
