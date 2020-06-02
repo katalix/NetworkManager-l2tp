@@ -83,6 +83,10 @@ typedef struct {
 	/* IP of L2TP gateway in numeric and string format */
 	guint32 naddr;
 	char *saddr;
+
+	/* Local IP route to the L2TP gateway */
+	char *slocaladdr;
+
 } NML2tpPluginPrivate;
 
 #define NM_L2TP_PLUGIN_GET_PRIVATE(o) (G_TYPE_INSTANCE_GET_PRIVATE ((o), NM_TYPE_L2TP_PLUGIN, NML2tpPluginPrivate))
@@ -874,7 +878,8 @@ nm_l2tp_config_write (NML2tpPlugin *plugin,
 			write_config_option (fd, "  authby=secret\n");
 		}
 
-		write_config_option (fd, "  left=%%defaultroute\n");
+		write_config_option (fd, "  left=%s\n", priv->slocaladdr);
+		write_config_option (fd, "  leftsubnet=%s[udp]\n", priv->slocaladdr);
 
 		if (priv->ipsec_daemon == NM_L2TP_IPSEC_DAEMON_LIBRESWAN && priv->machine_authtype == TLS_AUTH) {
 			write_config_option (fd, "  leftcert=%s\n", friendly_name);
@@ -909,8 +914,8 @@ nm_l2tp_config_write (NML2tpPlugin *plugin,
 			}
 		}
 
-		write_config_option (fd, "  rightprotoport=udp/l2tp\n");
 		write_config_option (fd, "  right=%s\n", priv->saddr);
+		write_config_option (fd, "  rightsubnet=%s[udp/l2tp]\n", priv->saddr);
 		value = nm_setting_vpn_get_data_item (s_vpn, NM_L2TP_KEY_IPSEC_REMOTE_ID);
 		if (value) {
 			write_config_option (fd, "  rightid=%s\n", value);
@@ -1695,6 +1700,41 @@ lookup_gateway (NML2tpPlugin *self,
 	return TRUE;
 }
 
+static gboolean
+get_localaddr (NML2tpPlugin *self,
+               GError **error)
+{
+	NML2tpPluginPrivate *priv = NM_L2TP_PLUGIN_GET_PRIVATE (self);
+	char abuf[INET_ADDRSTRLEN+1] = {};
+	struct sockaddr_in addr = {};
+	socklen_t alen = sizeof(addr);
+	int fd;
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0) {
+		return nm_l2tp_ipsec_error(error, _("couldn't determine local IP to contact L2TP VPN gateway"));
+	}
+
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(1701);
+	addr.sin_addr.s_addr = priv->naddr;
+
+	if (0 != connect (fd, &addr, sizeof(addr))) {
+		close (fd);
+		return nm_l2tp_ipsec_error(error, _("unable to connect to L2TP VPN gateway"));
+	}
+
+	memset( &addr, 0, sizeof(addr));
+	if (0 != getsockname( fd, &addr, &alen)) {
+		close (fd);
+		return nm_l2tp_ipsec_error(error, _("failed to get local IP"));
+	}
+
+	priv->slocaladdr = g_strdup (inet_ntop (AF_INET, &addr.sin_addr.s_addr, abuf, alen-1));
+	close(fd);
+
+	return TRUE;
+}
 
 static gboolean
 real_connect (NMVpnServicePlugin *plugin,
@@ -1750,6 +1790,9 @@ real_connect (NMVpnServicePlugin *plugin,
 	 * using for the connection, we wouldn't need to do this...
 	 */
 	if (!lookup_gateway (NM_L2TP_PLUGIN (plugin), gwaddr, error))
+		return FALSE;
+
+	if (!get_localaddr (NM_L2TP_PLUGIN (plugin), error))
 		return FALSE;
 
 	if (!nm_l2tp_properties_validate (s_vpn, error))
@@ -1876,6 +1919,10 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **err)
 	if (priv->saddr) {
 		g_free (priv->saddr);
 		priv->saddr = NULL;
+	}
+	if (priv->slocaladdr) {
+		g_free (priv->slocaladdr);
+		priv->slocaladdr = NULL;
 	}
 
 	if (!gl.debug) {
